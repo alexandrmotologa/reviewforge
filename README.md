@@ -1,6 +1,16 @@
-# ReviewForge
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="ReviewForge Logo" width="130" style="border-radius: 24px;" />
+</p>
 
-Self-hosted AI pull request reviewer, AST semantic diff auditor, and automated unit test synthesizer.
+<h1 align="center">ReviewForge</h1>
+
+<p align="center">
+  <strong>Self-hosted AI pull request reviewer, AST semantic diff auditor, and automated unit test synthesizer.</strong>
+</p>
+
+<p align="center">
+  <img src="docs/images/reviewforge_demo.gif" alt="ReviewForge Interactive Studio Demo" width="100%" />
+</p>
 
 ReviewForge is a private code review engine that runs on your own infrastructure as a CLI command or a webhook daemon. It parses Git diffs down to their enclosing Abstract Syntax Tree (AST) scopes, scans for OWASP vulnerabilities using deterministic AST rules, synthesizes runnable unit tests for new logic branches, and posts actionable multi-line suggestions directly to GitHub pull requests.
 
@@ -33,6 +43,45 @@ Unified Diff -> AST Scope Expander -> Static OWASP Scanner -> Unit Test Synthesi
 3. **Security Linter**: Runs deterministic AST visitor rules to detect dangerous APIs, unsanitized inputs, and leaked credentials.
 4. **Test Generator**: Analyzes function parameters, return types, and branch conditions to generate happy path, boundary, and error tests.
 5. **PR Review Publisher**: Submits structured pull request reviews via Octokit with multi-line suggestion blocks and a risk matrix summary.
+
+## Management Studio
+
+ReviewForge includes a Fastify daemon and React 19 studio for visual diff inspections, inline remediation, and data flow tracking.
+
+### Interactive AST Diff Viewer and Inline Remediation
+Apply suggested fixes directly inside the diff view and download patched files without leaving the browser.
+
+<p align="center">
+  <img src="docs/images/reviewforge_diff_viewer.png" alt="ReviewForge Interactive Diff Viewer" width="100%" />
+</p>
+
+### AST Taint Flow and Blast Radius Tracer
+Trace untrusted parameters through local call chains to dangerous execution sinks.
+
+<p align="center">
+  <img src="docs/images/reviewforge_taint_flow.png" alt="ReviewForge AST Taint Flow" width="100%" />
+</p>
+
+### Diff Playground and Risk Scorecard
+Inspect raw unified patches or fetch remote pull requests with instant OWASP scoring.
+
+<p align="center">
+  <img src="docs/images/reviewforge_dashboard.png" alt="ReviewForge Diff Playground" width="100%" />
+</p>
+
+### Conventional PR Description Synthesizer
+Generate conventional commit titles, markdown descriptions, and changelogs automatically from AST analysis.
+
+<p align="center">
+  <img src="docs/images/reviewforge_pr_description.png" alt="ReviewForge PR Description Synthesizer" width="100%" />
+</p>
+
+### Responsive Layout
+Full functionality across desktop monitors, laptops, tablets, and mobile devices.
+
+<p align="center">
+  <img src="docs/images/reviewforge_mobile.png" alt="ReviewForge Mobile Responsive View" width="340" />
+</p>
 
 ## Installation
 

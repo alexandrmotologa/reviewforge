@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex items-center space-x-1 bg-[#161822] p-1 rounded-lg border border-white/5 overflow-x-auto text-xs font-medium">
+        <nav className="flex items-center space-x-1 bg-[#161822] p-1 rounded-lg border border-white/5 overflow-x-auto no-scrollbar max-w-full text-xs font-medium">
           <button
             onClick={() => setActiveTab('playground')}
             className={`px-2.5 py-1.5 rounded-md flex items-center space-x-1.5 transition-all whitespace-nowrap ${
