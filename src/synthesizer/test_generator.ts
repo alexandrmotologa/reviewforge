@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { EnclosingScope, ParameterInfo } from '../ast/ts_parser';
 import { SupportedLanguage } from '../ast/context_expander';
+import { validateSynthesizedTestCode } from './validator';
 
 export type TestFramework = 'vitest' | 'jest' | 'pytest' | 'go';
 
@@ -10,6 +11,7 @@ export interface SynthesizedTestFile {
   framework: TestFramework;
   code: string;
   testCount: number;
+  isValidSyntax?: boolean;
 }
 
 /**
@@ -188,11 +190,18 @@ func Test${scope.name}_ErrorHandling(t *testing.T) {
 `;
   }
 
+  // Validate synthesized test syntax
+  const validation = validateSynthesizedTestCode(code, framework);
+  if (validation.repairedCode) {
+    code = validation.repairedCode;
+  }
+
   return {
     targetFilePath,
     testFilePath,
     framework,
     code,
-    testCount
+    testCount,
+    isValidSyntax: validation.valid
   };
 }

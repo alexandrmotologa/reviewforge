@@ -59,6 +59,30 @@ export interface SynthesizedTestFile {
   framework: 'vitest' | 'jest' | 'pytest' | 'go';
   code: string;
   testCount: number;
+  isValidSyntax?: boolean;
+}
+
+export interface BreakingChangeFinding {
+  type: string;
+  symbolName: string;
+  filePath: string;
+  line: number;
+  description: string;
+  severity: 'critical' | 'high' | 'medium';
+  oldSignature?: string;
+  newSignature?: string;
+}
+
+export interface PullRequestInfo {
+  title: string;
+  author?: string;
+  state: string;
+  headBranch?: string;
+  baseBranch?: string;
+  htmlUrl: string;
+  owner: string;
+  repo: string;
+  pullNumber: number;
 }
 
 export interface ReviewResult {
@@ -68,8 +92,11 @@ export interface ReviewResult {
   scorecard: SecurityScorecard;
   fileDiffs: FileDiff[];
   synthesizedTests: SynthesizedTestFile[];
+  breakingChanges: BreakingChangeFinding[];
+  patchContent: string;
   generalComments: string[];
   markdownReport: string;
+  prInfo?: PullRequestInfo;
 }
 
 export interface HealthStatus {

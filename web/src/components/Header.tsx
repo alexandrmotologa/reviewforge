@@ -1,14 +1,15 @@
 import React from 'react';
-import { ShieldCheck, GitPullRequest, Terminal, Settings, Cpu, ExternalLink } from 'lucide-react';
+import { ShieldCheck, GitPullRequest, Terminal, Settings, Cpu, ExternalLink, FileDiff } from 'lucide-react';
 import { HealthStatus } from '../types';
 
 interface HeaderProps {
-  activeTab: 'playground' | 'findings' | 'scorecard' | 'tests';
-  setActiveTab: (tab: 'playground' | 'findings' | 'scorecard' | 'tests') => void;
+  activeTab: 'playground' | 'diff' | 'findings' | 'scorecard' | 'tests';
+  setActiveTab: (tab: 'playground' | 'diff' | 'findings' | 'scorecard' | 'tests') => void;
   health: HealthStatus | null;
   onOpenSettings: () => void;
   findingsCount: number;
   testsCount: number;
+  filesCount: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,7 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   health,
   onOpenSettings,
   findingsCount,
-  testsCount
+  testsCount,
+  filesCount
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#0f1015]/90 backdrop-blur-md border-b border-white/10 px-6 py-3">
@@ -51,7 +53,24 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            <span>Diff Playground</span>
+            <span>Playground & PR</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('diff')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all ${
+              activeTab === 'diff'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-white/5'
+            }`}
+          >
+            <FileDiff className="w-3.5 h-3.5" />
+            <span>Interactive Diff</span>
+            {filesCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-white/10 text-neutral-300 font-mono">
+                {filesCount}
+              </span>
+            )}
           </button>
 
           <button

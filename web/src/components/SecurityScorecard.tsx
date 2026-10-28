@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { ShieldAlert, ShieldCheck, Download, Copy, Check, ExternalLink } from 'lucide-react';
-import { SecurityScorecard as ScorecardType } from '../types';
+import { ShieldCheck, Download, Copy, Check, FileDiff, AlertTriangle } from 'lucide-react';
+import { SecurityScorecard as ScorecardType, BreakingChangeFinding } from '../types';
 
 interface SecurityScorecardProps {
   scorecard: ScorecardType | null;
   reviewId?: string;
   markdownReport?: string;
+  breakingChanges?: BreakingChangeFinding[];
 }
 
 export const SecurityScorecard: React.FC<SecurityScorecardProps> = ({
   scorecard,
   reviewId,
-  markdownReport
+  markdownReport,
+  breakingChanges = []
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -37,6 +39,11 @@ export const SecurityScorecard: React.FC<SecurityScorecardProps> = ({
   const handleDownloadSarif = () => {
     if (!reviewId) return;
     window.open(`/api/reviews/${reviewId}/sarif`, '_blank');
+  };
+
+  const handleDownloadPatch = () => {
+    if (!reviewId) return;
+    window.open(`/api/reviews/${reviewId}/patch`, '_blank');
   };
 
   return (
@@ -77,34 +84,76 @@ export const SecurityScorecard: React.FC<SecurityScorecardProps> = ({
           <div className="text-xs text-neutral-400">CWE-22, CWE-918</div>
         </div>
 
-        {/* Medium & Low */}
-        <div className="bg-[#12141c] p-5 rounded-xl border border-white/5 flex flex-col justify-between">
-          <div className="text-xs font-mono uppercase text-neutral-400">Medium / Low Issues</div>
-          <div className="my-2 text-3xl font-bold font-mono text-neutral-200">
-            {scorecard.mediumCount + scorecard.lowCount}
+        {/* Breaking Changes */}
+        <div className="bg-[#12141c] p-5 rounded-xl border border-purple-500/20 flex flex-col justify-between">
+          <div className="text-xs font-mono uppercase text-purple-300">Breaking Changes</div>
+          <div className="my-2 text-3xl font-bold font-mono text-purple-400">
+            {breakingChanges.length}
           </div>
-          <div className="text-xs text-neutral-400">CWE-1333, CWE-942</div>
+          <div className="text-xs text-neutral-400">API Contract Diffs</div>
         </div>
       </div>
+
+      {/* Breaking Changes Alert Section */}
+      {breakingChanges.length > 0 && (
+        <div className="bg-[#1a1426] border border-purple-500/30 rounded-xl p-5 space-y-3">
+          <div className="flex items-center space-x-2 text-purple-300 font-semibold text-sm">
+            <AlertTriangle className="w-4 h-4 text-purple-400" />
+            <span>Breaking API Contract Changes Detected ({breakingChanges.length})</span>
+          </div>
+          <p className="text-xs text-neutral-300">
+            The changes alter the public exported interface of this module, which will break external callers:
+          </p>
+          <div className="space-y-2 mt-2">
+            {breakingChanges.map((bc, idx) => (
+              <div key={idx} className="bg-[#120e1c] p-3 rounded-lg border border-purple-500/20 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-white">{bc.symbolName}</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-purple-500/20 text-purple-300">
+                    {bc.type}
+                  </span>
+                </div>
+                <p className="text-neutral-300 mt-1">{bc.description}</p>
+                {bc.oldSignature && bc.newSignature && (
+                  <div className="mt-2 text-[11px] font-mono text-neutral-400 space-y-0.5">
+                    <div>Old: <code className="text-neutral-300">{bc.oldSignature}</code></div>
+                    <div>New: <code className="text-emerald-300">{bc.newSignature}</code></div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Export Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-[#12141c] p-4 rounded-xl border border-white/5">
         <div>
-          <h3 className="text-sm font-semibold text-white">Compliance & CI/CD Export</h3>
+          <h3 className="text-sm font-semibold text-white">Compliance & Patch Export</h3>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Export static analysis results to GitHub Code Scanning or download standard reports.
+            Download standard SARIF 2.1.0 for GitHub Code Scanning, or export a 1-click Git patch.
           </p>
         </div>
 
         <div className="flex items-center space-x-2">
           {reviewId && (
-            <button
-              onClick={handleDownloadSarif}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium flex items-center space-x-1.5 transition-all"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download SARIF 2.1.0</span>
-            </button>
+            <>
+              <button
+                onClick={handleDownloadPatch}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-medium flex items-center space-x-1.5 transition-all"
+              >
+                <FileDiff className="w-3.5 h-3.5" />
+                <span>Download Fixes Patch (.patch)</span>
+              </button>
+
+              <button
+                onClick={handleDownloadSarif}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium flex items-center space-x-1.5 transition-all"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download SARIF 2.1.0</span>
+              </button>
+            </>
           )}
 
           <button

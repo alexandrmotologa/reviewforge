@@ -92,41 +92,106 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     }
   });
 
-  // Review GitHub PR endpoint
+  // Review GitHub PR endpoint (accepts owner/repo/number or prUrl)
   app.post('/api/review/pr', async (req, reply) => {
     const body = req.body as {
-      owner: string;
-      repo: string;
-      pullNumber: number;
+      prUrl?: string;
+      owner?: string;
+      repo?: string;
+      pullNumber?: number;
       publish?: boolean;
     };
 
-    if (!body || !body.owner || !body.repo || !body.pullNumber) {
-      return reply.code(400).send({ error: 'Missing owner, repo, or pullNumber' });
+    let owner = body?.owner;
+    let repo = body?.repo;
+    let pullNumber = body?.pullNumber;
+
+    if (body?.prUrl) {
+      const match = body.prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i);
+      if (match) {
+        owner = match[1];
+        repo = match[2];
+        pullNumber = parseInt(match[3], 10);
+      } else {
+        const parts = body.prUrl.trim().split('/');
+        if (parts.length === 3) {
+          owner = parts[0];
+          repo = parts[1];
+          pullNumber = parseInt(parts[2], 10);
+        }
+      }
+    }
+
+    if (!owner || !repo || !pullNumber || isNaN(pullNumber)) {
+      return reply.code(400).send({ error: 'Please provide valid owner, repo, and pullNumber or full PR URL' });
     }
 
     try {
       const reviewer = new GitHubReviewer();
-      const diff = await reviewer.getPullRequestDiff(body.owner, body.repo, body.pullNumber);
+      const diff = await reviewer.getPullRequestDiff(owner, repo, pullNumber);
+      const prDetails = await reviewer.getPullRequestDetails(owner, repo, pullNumber);
+
       const result = await engine.reviewDiff(diff, { llmProvider });
 
       reviewsStore.set(result.id, result);
 
       if (body.publish) {
         await reviewer.publishReview({
-          owner: body.owner,
-          repo: body.repo,
-          pullNumber: body.pullNumber,
+          owner,
+          repo,
+          pullNumber,
           scorecard: result.scorecard,
           synthesizedTests: result.synthesizedTests,
           generalComments: result.generalComments
         });
       }
 
-      return reply.send(result);
+      return reply.send({
+        ...result,
+        prInfo: {
+          title: prDetails.title,
+          author: prDetails.user?.login,
+          state: prDetails.state,
+          headBranch: prDetails.head?.ref,
+          baseBranch: prDetails.base?.ref,
+          htmlUrl: prDetails.html_url,
+          owner,
+          repo,
+          pullNumber
+        }
+      });
     } catch (err: any) {
       req.log.error(err, 'Failed to review GitHub PR');
       return reply.code(500).send({ error: err.message || 'PR review failed' });
+    }
+  });
+
+  // Publish existing review to GitHub
+  app.post('/api/reviews/:id/publish', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const review = reviewsStore.get(id);
+    if (!review) {
+      return reply.code(404).send({ error: 'Review not found' });
+    }
+
+    const body = req.body as { owner: string; repo: string; pullNumber: number };
+    if (!body || !body.owner || !body.repo || !body.pullNumber) {
+      return reply.code(400).send({ error: 'Missing owner, repo, or pullNumber' });
+    }
+
+    try {
+      const reviewer = new GitHubReviewer();
+      const pubResult = await reviewer.publishReview({
+        owner: body.owner,
+        repo: body.repo,
+        pullNumber: body.pullNumber,
+        scorecard: review.scorecard,
+        synthesizedTests: review.synthesizedTests,
+        generalComments: review.generalComments
+      });
+      return reply.send({ success: true, reviewId: pubResult.reviewId });
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message || 'Publishing review failed' });
     }
   });
 
@@ -138,6 +203,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       summary: r.summary,
       filesCount: r.fileDiffs.length,
       totalFindings: r.scorecard.totalFindings,
+      breakingChangesCount: r.breakingChanges.length,
       riskScore: r.scorecard.riskScore,
       passed: r.scorecard.passed,
       testsCount: r.synthesizedTests.length
@@ -165,6 +231,18 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     const sarif = generateSarifReport(review.scorecard.findings);
     reply.header('Content-Type', 'application/json');
     return reply.send(sarif);
+  });
+
+  // Export review as Git unified .patch file
+  app.get('/api/reviews/:id/patch', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const review = reviewsStore.get(id);
+    if (!review) {
+      return reply.code(404).send({ error: 'Review not found' });
+    }
+    reply.header('Content-Type', 'text/x-diff');
+    reply.header('Content-Disposition', `attachment; filename="${id}-fixes.patch"`);
+    return reply.send(review.patchContent || '');
   });
 
   // Settings endpoints

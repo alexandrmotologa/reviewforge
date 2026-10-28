@@ -1,10 +1,14 @@
 import { parseUnifiedDiff, FileDiff } from '../git/diff_parser';
-import { expandFileContext, ExpandedFileContext } from '../ast/context_expander';
+import { expandFileContext, ExpandedFileContext, reconstructFileFromDiff } from '../ast/context_expander';
 import { SecurityLinter, defaultLinter } from '../security/linter';
 import { SecurityFinding, SecurityScorecard } from '../security/types';
 import { synthesizeTestsOffline, SynthesizedTestFile, TestFramework } from '../synthesizer/test_generator';
 import { LLMProvider } from './llm_provider';
-import { buildReviewSystemPrompt, buildTestSynthesisPrompt } from '../synthesizer/prompt_templates';
+import { buildReviewSystemPrompt } from '../synthesizer/prompt_templates';
+import { ReviewForgeConfig, isFileExcluded } from '../config/policy';
+import { loadReviewForgeConfig } from '../config/loader';
+import { detectBreakingChanges, BreakingChangeFinding } from '../ast/breaking_changes';
+import { generateGitPatch } from '../export/patch';
 
 export interface ReviewOptions {
   generateTests?: boolean;
@@ -12,6 +16,7 @@ export interface ReviewOptions {
   baseDir?: string;
   fileContents?: Map<string, string>;
   llmProvider?: LLMProvider;
+  config?: ReviewForgeConfig;
 }
 
 export interface ReviewResult {
@@ -22,6 +27,8 @@ export interface ReviewResult {
   fileDiffs: FileDiff[];
   expandedContexts: ExpandedFileContext[];
   synthesizedTests: SynthesizedTestFile[];
+  breakingChanges: BreakingChangeFinding[];
+  patchContent: string;
   generalComments: string[];
   markdownReport: string;
 }
@@ -43,37 +50,80 @@ export class ReviewForgeEngine {
     const createdAt = new Date().toISOString();
     const generateTests = options.generateTests ?? true;
 
-    // 1. Parse unified diff
-    const fileDiffs = parseUnifiedDiff(rawDiff);
+    // Load configuration
+    const config = options.config || loadReviewForgeConfig(options.baseDir);
+    const framework = options.preferredFramework || config.framework;
 
-    // 2. Expand AST context for each file
+    // 1. Parse unified diff
+    const allFileDiffs = parseUnifiedDiff(rawDiff);
+
+    // Filter out excluded files
+    const fileDiffs = allFileDiffs.filter(diff => !isFileExcluded(diff.newPath, config.exclude));
+
+    // 2. Expand AST context & collect breaking changes
     const expandedContexts: ExpandedFileContext[] = [];
     const diffFilesForLinter: Array<{ diff: FileDiff; content: string }> = [];
+    const breakingChanges: BreakingChangeFinding[] = [];
+    const fileContentsMap = new Map<string, string>();
 
     for (const diff of fileDiffs) {
       const explicitContent = options.fileContents?.get(diff.newPath);
       const expanded = expandFileContext(diff, explicitContent, options.baseDir);
       expandedContexts.push(expanded);
+
+      const newContent = expanded.fileContent || reconstructFileFromDiff(diff);
+      fileContentsMap.set(diff.newPath, newContent);
+
       diffFilesForLinter.push({
         diff,
-        content: expanded.fileContent || ''
+        content: newContent
       });
+
+      // Detect breaking changes if the file was modified (not new or deleted)
+      if (!diff.isNew && !diff.isDeleted && diff.hunks.length > 0) {
+        const oldContent = this.reconstructOldContent(diff);
+        if (oldContent.trim()) {
+          const bc = detectBreakingChanges(diff.newPath, oldContent, newContent);
+          breakingChanges.push(...bc);
+        }
+      }
     }
 
     // 3. Run static security audit
-    const scorecard = this.linter.scanDiffs(diffFilesForLinter);
+    let scorecard = this.linter.scanDiffs(diffFilesForLinter);
+
+    // Apply rule configurations (error, warn, ignore)
+    if (config.rules && Object.keys(config.rules).length > 0) {
+      scorecard.findings = scorecard.findings.filter(f => {
+        const action = config.rules[f.ruleId];
+        if (action === 'ignore') return false;
+        if (action === 'warn') {
+          if (f.severity === 'critical' || f.severity === 'high') {
+            f.severity = 'medium';
+          }
+        }
+        return true;
+      });
+
+      const updated = this.linter.buildScorecard(scorecard.findings);
+      Object.assign(scorecard, updated);
+    }
+
+    // Evaluate scorecard compliance based on policy
+    scorecard.passed =
+      scorecard.riskScore >= config.min_score &&
+      (!config.block_on_critical || scorecard.criticalCount === 0);
 
     // 4. Synthesize unit tests for modified scopes
     const synthesizedTests: SynthesizedTestFile[] = [];
     if (generateTests) {
       for (const ctx of expandedContexts) {
         for (const modScope of ctx.modifiedScopes) {
-          // Synthesize tests for each modified function
           const testFile = synthesizeTestsOffline(
             ctx.filePath,
             modScope.scope,
             ctx.language,
-            options.preferredFramework
+            framework
           );
           synthesizedTests.push(testFile);
         }
@@ -129,29 +179,39 @@ export class ReviewForgeEngine {
                       suggestionCode: f.suggestionCode
                     });
                   }
-                  // Recalculate scorecard
                   const updated = this.linter.buildScorecard(scorecard.findings);
                   Object.assign(scorecard, updated);
+                  scorecard.passed =
+                    scorecard.riskScore >= config.min_score &&
+                    (!config.block_on_critical || scorecard.criticalCount === 0);
                 }
               }
             } catch {
-              // Ignore JSON parse errors from LLM output
+              // Ignore JSON parse errors
             }
           }
         }
       }
     }
 
+    // 6. Generate 1-click git patch
+    const patchResult = generateGitPatch(scorecard.findings, fileContentsMap);
+
     // Build executive summary
-    let summary = `Analyzed ${fileDiffs.length} files with ${scorecard.totalFindings} security findings.`;
-    if (scorecard.passed) {
-      summary += ' No critical or high-severity vulnerabilities detected.';
-    } else {
-      summary += ` Flagged ${scorecard.criticalCount} critical and ${scorecard.highCount} high-severity issues.`;
+    let summary = `Analyzed ${fileDiffs.length} files with ${scorecard.totalFindings} security findings`;
+    if (breakingChanges.length > 0) {
+      summary += ` and ${breakingChanges.length} breaking API contract change(s)`;
     }
+    summary += `. Risk Score: ${scorecard.riskScore}/100.`;
 
     // Build markdown report
-    const markdownReport = this.buildMarkdownReport(summary, scorecard, synthesizedTests, generalComments);
+    const markdownReport = this.buildMarkdownReport(
+      summary,
+      scorecard,
+      synthesizedTests,
+      breakingChanges,
+      generalComments
+    );
 
     return {
       id,
@@ -161,15 +221,30 @@ export class ReviewForgeEngine {
       fileDiffs,
       expandedContexts,
       synthesizedTests,
+      breakingChanges,
+      patchContent: patchResult.patchContent,
       generalComments,
       markdownReport
     };
+  }
+
+  private reconstructOldContent(diff: FileDiff): string {
+    const lines: string[] = [];
+    for (const hunk of diff.hunks) {
+      for (const dl of hunk.lines) {
+        if (dl.type === 'context' || dl.type === 'delete') {
+          lines.push(dl.content);
+        }
+      }
+    }
+    return lines.join('\n');
   }
 
   private buildMarkdownReport(
     summary: string,
     scorecard: SecurityScorecard,
     synthesizedTests: SynthesizedTestFile[],
+    breakingChanges: BreakingChangeFinding[],
     generalComments: string[]
   ): string {
     const lines: string[] = [
@@ -177,7 +252,7 @@ export class ReviewForgeEngine {
       '',
       `> ${summary}`,
       '',
-      `**Risk Score**: ${scorecard.riskScore}/100 | **Status**: ${scorecard.passed ? 'PASSED' : 'NEEDS ATTENTION'}`,
+      `**Risk Score**: ${scorecard.riskScore}/100 | **Status**: ${scorecard.passed ? 'PASSED' : 'ACTION REQUIRED'}`,
       '',
       '## Security Scorecard',
       '| Metric | Value |',
@@ -189,6 +264,20 @@ export class ReviewForgeEngine {
       `| Overall Risk Score | ${scorecard.riskScore} / 100 |`,
       ''
     ];
+
+    if (breakingChanges.length > 0) {
+      lines.push('## Breaking API Changes Detected');
+      for (const bc of breakingChanges) {
+        lines.push(`### [${bc.severity.toUpperCase()}] ${bc.symbolName} (${bc.type})`);
+        lines.push(`- **Location**: \`${bc.filePath}:${bc.line}\``);
+        lines.push(`- **Impact**: ${bc.description}`);
+        if (bc.oldSignature && bc.newSignature) {
+          lines.push(`- **Old**: \`${bc.oldSignature}\``);
+          lines.push(`- **New**: \`${bc.newSignature}\``);
+        }
+        lines.push('');
+      }
+    }
 
     if (scorecard.findings.length > 0) {
       lines.push('## Detected Vulnerabilities');

@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { ReviewResult, HealthStatus } from '../types';
 
 export function useReviewSession() {
-  const [activeTab, setActiveTab] = useState<'playground' | 'findings' | 'scorecard' | 'tests'>('playground');
+  const [activeTab, setActiveTab] = useState<'playground' | 'diff' | 'findings' | 'scorecard' | 'tests'>('playground');
   const [currentResult, setCurrentResult] = useState<ReviewResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -30,6 +32,7 @@ export function useReviewSession() {
   const analyzeDiff = async (diff: string, generateTests: boolean = true, framework: string = 'vitest') => {
     setIsLoading(true);
     setError(null);
+    setSuccessMessage(null);
     try {
       const res = await fetch('/api/review/diff', {
         method: 'POST',
@@ -55,16 +58,74 @@ export function useReviewSession() {
     }
   };
 
+  const analyzePrUrl = async (prUrl: string) => {
+    setIsLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const res = await fetch('/api/review/pr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prUrl })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json() as { error?: string };
+        throw new Error(errData.error || `Failed to fetch PR with HTTP ${res.status}`);
+      }
+
+      const result = await res.json() as ReviewResult;
+      setCurrentResult(result);
+    } catch (err: any) {
+      setError(err.message || 'Failed to analyze GitHub PR');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const publishReview = async () => {
+    if (!currentResult || !currentResult.prInfo) return;
+    setIsPublishing(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const res = await fetch(`/api/reviews/${currentResult.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner: currentResult.prInfo.owner,
+          repo: currentResult.prInfo.repo,
+          pullNumber: currentResult.prInfo.pullNumber
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json() as { error?: string };
+        throw new Error(errData.error || 'Failed to publish review to GitHub');
+      }
+
+      setSuccessMessage('Review comments and suggestions successfully published to GitHub PR!');
+    } catch (err: any) {
+      setError(err.message || 'Failed to publish review');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   return {
     activeTab,
     setActiveTab,
     currentResult,
     isLoading,
+    isPublishing,
     error,
+    successMessage,
     health,
     isSettingsOpen,
     setIsSettingsOpen,
     analyzeDiff,
+    analyzePrUrl,
+    publishReview,
     refreshHealth: fetchHealth
   };
 }

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { DiffPlayground } from './components/DiffPlayground';
+import { DiffViewer } from './components/DiffViewer';
 import { PrReviewCard } from './components/PrReviewCard';
 import { SecurityScorecard } from './components/SecurityScorecard';
 import { SynthesizedTests } from './components/SynthesizedTests';
 import { ModelSettingsModal } from './components/ModelSettingsModal';
 import { useReviewSession } from './hooks/useReviewSession';
-import { ShieldCheck, Filter } from 'lucide-react';
+import { ShieldCheck, Filter, CheckCircle2 } from 'lucide-react';
 
 export const App: React.FC = () => {
   const {
@@ -14,11 +15,15 @@ export const App: React.FC = () => {
     setActiveTab,
     currentResult,
     isLoading,
+    isPublishing,
     error,
+    successMessage,
     health,
     isSettingsOpen,
     setIsSettingsOpen,
     analyzeDiff,
+    analyzePrUrl,
+    publishReview,
     refreshHealth
   } = useReviewSession();
 
@@ -39,30 +44,46 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         findingsCount={findings.length}
         testsCount={currentResult?.synthesizedTests.length || 0}
+        filesCount={currentResult?.fileDiffs.length || 0}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6">
-        {/* Error Banner */}
+        {/* Alerts */}
         {error && (
           <div className="mb-6 p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-200 text-xs flex items-center justify-between">
             <span>{error}</span>
           </div>
         )}
+        {successMessage && (
+          <div className="mb-6 p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-xs flex items-center space-x-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>{successMessage}</span>
+          </div>
+        )}
 
-        {/* Tab 1: Playground */}
+        {/* Tab 1: Playground & PR URL */}
         {activeTab === 'playground' && (
           <DiffPlayground
-            onAnalyze={async (diff, genTests, framework) => {
-              await analyzeDiff(diff, genTests, framework);
-            }}
+            onAnalyzeDiff={analyzeDiff}
+            onAnalyzePrUrl={analyzePrUrl}
+            onPublishReview={publishReview}
             isLoading={isLoading}
+            isPublishing={isPublishing}
             currentResult={currentResult}
-            onSelectFindingTab={() => setActiveTab('findings')}
+            onSelectTab={setActiveTab}
           />
         )}
 
-        {/* Tab 2: Findings & 1-Click Suggestions */}
+        {/* Tab 2: Interactive Diff Viewer */}
+        {activeTab === 'diff' && (
+          <DiffViewer
+            files={currentResult?.fileDiffs || []}
+            findings={currentResult?.scorecard.findings || []}
+          />
+        )}
+
+        {/* Tab 3: Findings & 1-Click Suggestions */}
         {activeTab === 'findings' && (
           <div className="space-y-4">
             {/* Filter Bar */}
@@ -112,16 +133,17 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 3: Security Scorecard */}
+        {/* Tab 4: Security Scorecard & Breaking Changes */}
         {activeTab === 'scorecard' && (
           <SecurityScorecard
             scorecard={currentResult?.scorecard || null}
             reviewId={currentResult?.id}
             markdownReport={currentResult?.markdownReport}
+            breakingChanges={currentResult?.breakingChanges || []}
           />
         )}
 
-        {/* Tab 4: Synthesized Tests */}
+        {/* Tab 5: Synthesized Tests */}
         {activeTab === 'tests' && (
           <SynthesizedTests tests={currentResult?.synthesizedTests || []} />
         )}
