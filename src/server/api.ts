@@ -1,0 +1,217 @@
+import fastify, { FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
+import * as path from 'path';
+import * as fs from 'fs';
+import { ReviewForgeEngine, defaultEngine, ReviewResult } from '../engine/reviewer';
+import { LLMProvider, ProviderType } from '../engine/llm_provider';
+import { GitHubReviewer } from '../git/octokit_client';
+import { generateSarifReport } from '../export/sarif';
+import { handleGitHubWebhook } from './webhook';
+
+export interface ServerOptions {
+  port?: number;
+  host?: string;
+  engine?: ReviewForgeEngine;
+}
+
+export function buildServer(options: ServerOptions = {}): FastifyInstance {
+  const app = fastify({
+    logger: {
+      level: process.env.LOG_LEVEL || 'info'
+    }
+  });
+
+  const engine = options.engine || defaultEngine;
+  let llmProvider = new LLMProvider();
+  const reviewsStore = new Map<string, ReviewResult>();
+
+  // Register CORS
+  app.register(cors, {
+    origin: true
+  });
+
+  // Serve static files from web/dist if built
+  const webDistPath = path.resolve(__dirname, '../../web/dist');
+  if (fs.existsSync(webDistPath)) {
+    app.register(fastifyStatic, {
+      root: webDistPath,
+      prefix: '/'
+    });
+  }
+
+  // Health check endpoint
+  app.get('/api/health', async () => {
+    const health = await llmProvider.checkHealth();
+    return {
+      status: 'ok',
+      service: 'ReviewForge',
+      version: '1.0.0',
+      uptime: process.uptime(),
+      provider: llmProvider.getProviderType(),
+      model: llmProvider.getModelName(),
+      providerStatus: health
+    };
+  });
+
+  // Webhook endpoint
+  app.post('/api/webhook/github', async (req, reply) => {
+    return handleGitHubWebhook(req, reply, engine);
+  });
+
+  // Review raw diff endpoint
+  app.post('/api/review/diff', async (req, reply) => {
+    const body = req.body as {
+      diff: string;
+      generateTests?: boolean;
+      preferredFramework?: any;
+    };
+
+    if (!body || !body.diff) {
+      return reply.code(400).send({ error: 'Field "diff" is required.' });
+    }
+
+    try {
+      const result = await engine.reviewDiff(body.diff, {
+        generateTests: body.generateTests,
+        preferredFramework: body.preferredFramework,
+        llmProvider
+      });
+
+      reviewsStore.set(result.id, result);
+      // Keep store under 100 items
+      if (reviewsStore.size > 100) {
+        const firstKey = reviewsStore.keys().next().value;
+        if (firstKey) reviewsStore.delete(firstKey);
+      }
+
+      return reply.send(result);
+    } catch (err: any) {
+      req.log.error(err, 'Failed to process diff review');
+      return reply.code(500).send({ error: err.message || 'Review failed' });
+    }
+  });
+
+  // Review GitHub PR endpoint
+  app.post('/api/review/pr', async (req, reply) => {
+    const body = req.body as {
+      owner: string;
+      repo: string;
+      pullNumber: number;
+      publish?: boolean;
+    };
+
+    if (!body || !body.owner || !body.repo || !body.pullNumber) {
+      return reply.code(400).send({ error: 'Missing owner, repo, or pullNumber' });
+    }
+
+    try {
+      const reviewer = new GitHubReviewer();
+      const diff = await reviewer.getPullRequestDiff(body.owner, body.repo, body.pullNumber);
+      const result = await engine.reviewDiff(diff, { llmProvider });
+
+      reviewsStore.set(result.id, result);
+
+      if (body.publish) {
+        await reviewer.publishReview({
+          owner: body.owner,
+          repo: body.repo,
+          pullNumber: body.pullNumber,
+          scorecard: result.scorecard,
+          synthesizedTests: result.synthesizedTests,
+          generalComments: result.generalComments
+        });
+      }
+
+      return reply.send(result);
+    } catch (err: any) {
+      req.log.error(err, 'Failed to review GitHub PR');
+      return reply.code(500).send({ error: err.message || 'PR review failed' });
+    }
+  });
+
+  // List recent reviews
+  app.get('/api/reviews', async () => {
+    const list = Array.from(reviewsStore.values()).map(r => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      summary: r.summary,
+      filesCount: r.fileDiffs.length,
+      totalFindings: r.scorecard.totalFindings,
+      riskScore: r.scorecard.riskScore,
+      passed: r.scorecard.passed,
+      testsCount: r.synthesizedTests.length
+    }));
+    return { reviews: list.reverse() };
+  });
+
+  // Get specific review
+  app.get('/api/reviews/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const review = reviewsStore.get(id);
+    if (!review) {
+      return reply.code(404).send({ error: 'Review not found' });
+    }
+    return reply.send(review);
+  });
+
+  // Export review as SARIF
+  app.get('/api/reviews/:id/sarif', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const review = reviewsStore.get(id);
+    if (!review) {
+      return reply.code(404).send({ error: 'Review not found' });
+    }
+    const sarif = generateSarifReport(review.scorecard.findings);
+    reply.header('Content-Type', 'application/json');
+    return reply.send(sarif);
+  });
+
+  // Settings endpoints
+  app.get('/api/settings', async () => {
+    return {
+      provider: llmProvider.getProviderType(),
+      model: llmProvider.getModelName(),
+      hasGithubToken: Boolean(process.env.GITHUB_TOKEN),
+      hasWebhookSecret: Boolean(process.env.GITHUB_WEBHOOK_SECRET)
+    };
+  });
+
+  app.post('/api/settings', async (req, reply) => {
+    const body = req.body as {
+      provider: ProviderType;
+      baseUrl?: string;
+      apiKey?: string;
+      model?: string;
+      temperature?: number;
+    };
+
+    llmProvider = new LLMProvider(body);
+    const health = await llmProvider.checkHealth();
+
+    return reply.send({
+      status: 'updated',
+      provider: llmProvider.getProviderType(),
+      model: llmProvider.getModelName(),
+      health
+    });
+  });
+
+  app.post('/api/settings/test', async () => {
+    return llmProvider.checkHealth();
+  });
+
+  return app;
+}
+
+export async function startServer(port: number = 9440, host: string = '0.0.0.0'): Promise<FastifyInstance> {
+  const app = buildServer();
+  try {
+    await app.listen({ port, host });
+    console.log(`ReviewForge server and web studio active at http://${host}:${port}`);
+    return app;
+  } catch (err) {
+    console.error('Failed to bind ReviewForge server:', err);
+    throw err;
+  }
+}
