@@ -93,4 +93,56 @@ new file mode 100644
     const json = JSON.parse(res.body);
     expect(json.message).toBe('PONG');
   });
+
+  it('GET /api/audit-log returns historical reviews and webhook events', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log'
+    });
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.records).toBeDefined();
+    expect(Array.isArray(json.records)).toBe(true);
+    expect(json.records.length).toBeGreaterThan(0);
+    expect(json.records[0].event).toBe('manual_diff_review');
+  });
+
+  it('POST /api/rules/test tests custom regex patterns against code snippets', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/rules/test',
+      payload: {
+        pattern: '\\beval\\s*\\([^)]+\\)',
+        code: 'const out = eval(input);',
+        severity: 'critical'
+      }
+    });
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.validRegex).toBe(true);
+    expect(json.matchesCount).toBe(1);
+    expect(json.findings[0].line).toBe(1);
+  });
+
+  it('POST /api/rules/save persists custom rule to policy configuration', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/rules/save',
+      payload: {
+        id: 'no_test_eval',
+        title: 'Disallow eval in test files',
+        severity: 'high',
+        cwe: 'CWE-95',
+        pattern: '\\beval\\s*\\(',
+        description: 'Dynamic eval is prohibited',
+        remediation: 'Use JSON.parse'
+      }
+    });
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.success).toBe(true);
+  });
 });

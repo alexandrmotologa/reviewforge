@@ -85,6 +85,36 @@ export interface PullRequestInfo {
   pullNumber: number;
 }
 
+export interface TaintTraceFinding {
+  entryFunction: string;
+  sinkCall: string;
+  filePath: string;
+  callChain: string[];
+  description: string;
+  blastRadius: number;
+  risk: 'critical' | 'high' | 'medium';
+}
+
+export interface PrDescriptionResult {
+  title: string;
+  conventionalType: 'feat' | 'fix' | 'refactor' | 'perf' | 'security' | 'chore';
+  scope: string;
+  markdownDescription: string;
+  changelogEntry: string;
+}
+
+export interface WebhookEventRecord {
+  id: string;
+  timestamp: string;
+  event: string;
+  repo: string;
+  pullNumber?: number;
+  author?: string;
+  reviewId?: string;
+  riskScore?: number;
+  status: 'PASSED' | 'ACTION REQUIRED' | 'ERROR';
+}
+
 export interface ReviewResult {
   id: string;
   createdAt: string;
@@ -93,6 +123,8 @@ export interface ReviewResult {
   fileDiffs: FileDiff[];
   synthesizedTests: SynthesizedTestFile[];
   breakingChanges: BreakingChangeFinding[];
+  taintTraces?: TaintTraceFinding[];
+  prDescription?: PrDescriptionResult;
   patchContent: string;
   generalComments: string[];
   markdownReport: string;

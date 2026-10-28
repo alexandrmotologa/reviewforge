@@ -1,8 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ReviewResult, HealthStatus } from '../types';
 
+export type ReviewTabType =
+  | 'playground'
+  | 'diff'
+  | 'findings'
+  | 'pr-description'
+  | 'taint'
+  | 'audit'
+  | 'scorecard'
+  | 'tests';
+
 export function useReviewSession() {
-  const [activeTab, setActiveTab] = useState<'playground' | 'diff' | 'findings' | 'scorecard' | 'tests'>('playground');
+  const [activeTab, setActiveTab] = useState<ReviewTabType>('playground');
   const [currentResult, setCurrentResult] = useState<ReviewResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -10,6 +20,7 @@ export function useReviewSession() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -116,6 +127,7 @@ export function useReviewSession() {
     activeTab,
     setActiveTab,
     currentResult,
+    setCurrentResult,
     isLoading,
     isPublishing,
     error,
@@ -123,6 +135,8 @@ export function useReviewSession() {
     health,
     isSettingsOpen,
     setIsSettingsOpen,
+    isRulesModalOpen,
+    setIsRulesModalOpen,
     analyzeDiff,
     analyzePrUrl,
     publishReview,

@@ -6,6 +6,10 @@ import { PrReviewCard } from './components/PrReviewCard';
 import { SecurityScorecard } from './components/SecurityScorecard';
 import { SynthesizedTests } from './components/SynthesizedTests';
 import { ModelSettingsModal } from './components/ModelSettingsModal';
+import { PrDescriptionTab } from './components/PrDescriptionTab';
+import { TaintTracerTab } from './components/TaintTracerTab';
+import { AuditLogTab } from './components/AuditLogTab';
+import { CustomRulesModal } from './components/CustomRulesModal';
 import { useReviewSession } from './hooks/useReviewSession';
 import { ShieldCheck, Filter, CheckCircle2 } from 'lucide-react';
 
@@ -14,6 +18,7 @@ export const App: React.FC = () => {
     activeTab,
     setActiveTab,
     currentResult,
+    setCurrentResult,
     isLoading,
     isPublishing,
     error,
@@ -21,6 +26,8 @@ export const App: React.FC = () => {
     health,
     isSettingsOpen,
     setIsSettingsOpen,
+    isRulesModalOpen,
+    setIsRulesModalOpen,
     analyzeDiff,
     analyzePrUrl,
     publishReview,
@@ -42,9 +49,11 @@ export const App: React.FC = () => {
         setActiveTab={setActiveTab}
         health={health}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenRulesModal={() => setIsRulesModalOpen(true)}
         findingsCount={findings.length}
         testsCount={currentResult?.synthesizedTests.length || 0}
         filesCount={currentResult?.fileDiffs.length || 0}
+        taintCount={currentResult?.taintTraces?.length || 0}
       />
 
       {/* Main Container */}
@@ -83,7 +92,33 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Tab 3: Findings & 1-Click Suggestions */}
+        {/* Tab 3: PR Description & Conventional Changelog */}
+        {activeTab === 'pr-description' && (
+          <PrDescriptionTab
+            prDescription={currentResult?.prDescription}
+            breakingChanges={currentResult?.breakingChanges || []}
+            scorecard={currentResult?.scorecard || null}
+          />
+        )}
+
+        {/* Tab 4: AST Taint & Blast Radius */}
+        {activeTab === 'taint' && (
+          <TaintTracerTab
+            taintTraces={currentResult?.taintTraces || []}
+          />
+        )}
+
+        {/* Tab 5: PR Audit Log & History */}
+        {activeTab === 'audit' && (
+          <AuditLogTab
+            onLoadReview={(rev) => {
+              setCurrentResult(rev);
+              setActiveTab('diff');
+            }}
+          />
+        )}
+
+        {/* Tab 6: Findings & 1-Click Suggestions */}
         {activeTab === 'findings' && (
           <div className="space-y-4">
             {/* Filter Bar */}
@@ -101,7 +136,7 @@ export const App: React.FC = () => {
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium uppercase font-mono transition-all ${
                       severityFilter === sev
                         ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-[#181a26] text-neutral-400 hover:text-white hover:bg-white/5'
+                        : 'bg-[#181a24] text-neutral-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     {sev}
@@ -133,7 +168,7 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 4: Security Scorecard & Breaking Changes */}
+        {/* Tab 7: Security Scorecard & Breaking Changes */}
         {activeTab === 'scorecard' && (
           <SecurityScorecard
             scorecard={currentResult?.scorecard || null}
@@ -143,7 +178,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Tab 5: Synthesized Tests */}
+        {/* Tab 8: Synthesized Tests */}
         {activeTab === 'tests' && (
           <SynthesizedTests tests={currentResult?.synthesizedTests || []} />
         )}
@@ -155,6 +190,12 @@ export const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         health={health}
         onSettingsSaved={refreshHealth}
+      />
+
+      {/* Custom Rules Sandbox Modal */}
+      <CustomRulesModal
+        isOpen={isRulesModalOpen}
+        onClose={() => setIsRulesModalOpen(false)}
       />
     </div>
   );

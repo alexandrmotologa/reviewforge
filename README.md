@@ -12,6 +12,12 @@ ReviewForge is a private code review engine that runs on your own infrastructure
 - **One-Click GitHub Suggestions**: Posts review comments formatted as markdown suggestion blocks that authors can commit directly from the GitHub pull request UI.
 - **Model Agnostic with Zero Code Retention**: Connects to local Ollama instances (such as DeepSeek-Coder or Qwen 2.5) for fully offline analysis, or private commercial endpoints (Claude 3.5 Sonnet, GPT-4o, Gemini 2.0 Flash). When no model is configured, ReviewForge operates deterministically using static AST rules.
 - **SARIF Code Scanning Export**: Produces SARIF 2.1.0 output for native GitHub Code Scanning and security tab integration.
+- **AST Taint and Blast Radius Tracer**: Traces input propagation from untrusted function parameters downstream into critical execution sinks (database queries, shell executions, filesystem reads) and calculates blast radius caller impact.
+- **Conventional PR Description and Changelog Synthesizer**: Generates structured Conventional Commits pull request descriptions, breaking change summaries, and changelog entries directly from AST semantic diffs.
+- **Interactive In-Browser Custom Rule Sandbox**: Allows teams to author, test against sample code, and persist custom regex rules to `.reviewforge.yml`.
+- **One-Click Inline Fixes and Patched Diff Download**: Resolves vulnerabilities directly inside the web diff viewer, updates line displays with color-coded states, and exports clean patched files.
+- **PR Audit Log and Re-Review Workflow**: Records every manual review and webhook event, with historical tracking and 1-click re-review execution.
+- **Reviewer Progress Tracker and File Filters**: Tracks file review completion status with a visual progress bar, file path search, and vulnerability status filtering.
 - **Interactive Web Studio**: Fastify daemon on port 9440 with a React 19 dashboard for live diff analysis, test downloads, and security scorecards.
 
 ## Architecture

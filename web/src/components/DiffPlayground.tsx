@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Sparkles, FileCode, CheckCircle2, AlertOctagon, RotateCcw, GitPullRequest, Send, ExternalLink } from 'lucide-react';
 import { ReviewResult } from '../types';
+import { ReviewTabType } from '../hooks/useReviewSession';
 
 interface DiffPlaygroundProps {
   onAnalyzeDiff: (diff: string, generateTests: boolean, framework: string) => Promise<void>;
@@ -9,7 +10,7 @@ interface DiffPlaygroundProps {
   isLoading: boolean;
   isPublishing: boolean;
   currentResult: ReviewResult | null;
-  onSelectTab: (tab: 'diff' | 'findings' | 'scorecard' | 'tests') => void;
+  onSelectTab: (tab: ReviewTabType) => void;
 }
 
 const SAMPLE_PRESETS = {
@@ -331,7 +332,7 @@ export const DiffPlayground: React.FC<DiffPlaygroundProps> = ({
             </p>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-3 gap-2 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
               <button
                 onClick={() => onSelectTab('diff')}
                 className="py-2 px-2.5 rounded-lg bg-[#181a26] hover:bg-white/10 text-neutral-200 text-xs font-medium border border-white/5 text-center transition-all"
@@ -339,10 +340,16 @@ export const DiffPlayground: React.FC<DiffPlaygroundProps> = ({
                 Interactive Diff
               </button>
               <button
-                onClick={() => onSelectTab('findings')}
+                onClick={() => onSelectTab('pr-description')}
                 className="py-2 px-2.5 rounded-lg bg-[#181a26] hover:bg-white/10 text-neutral-200 text-xs font-medium border border-white/5 text-center transition-all"
               >
-                {currentResult.scorecard.totalFindings} Findings
+                PR Description
+              </button>
+              <button
+                onClick={() => onSelectTab('taint')}
+                className="py-2 px-2.5 rounded-lg bg-[#181a26] hover:bg-white/10 text-neutral-200 text-xs font-medium border border-white/5 text-center transition-all"
+              >
+                Taint Flow ({currentResult.taintTraces?.length || 0})
               </button>
               <button
                 onClick={() => onSelectTab('tests')}

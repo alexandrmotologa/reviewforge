@@ -61,7 +61,9 @@ reviewforge/
 │   │   ├── ts_parser.ts          # TypeScript and JavaScript AST parser (Babel and Recast)
 │   │   ├── python_parser.ts      # Python scope, function, and import extractor
 │   │   ├── go_parser.ts          # Go function, receiver, and package inspector
-│   │   └── context_expander.ts   # Locates surrounding function and class scope for hunks
+│   │   ├── context_expander.ts   # Locates surrounding function and class scope for hunks
+│   │   ├── breaking_changes.ts   # API contract comparison (parameter and export changes)
+│   │   └── taint_tracer.ts       # AST taint flow tracer and blast radius calculator
 │   ├── security/
 │   │   ├── rules/
 │   │   │   ├── sql_injection.ts  # Detects unparameterized SQL queries in template strings
@@ -71,10 +73,13 @@ reviewforge/
 │   │   │   ├── insecure_regex.ts # Detects exponential catastrophic backtracking patterns
 │   │   │   ├── ssrf.ts           # Detects unvalidated outbound network requests
 │   │   │   └── cors_csrf.ts      # Detects permissive CORS origins and unprotected routes
+│   │   ├── custom_rule_engine.ts # In-memory custom regex sandbox and .reviewforge.yml updater
 │   │   └── linter.ts             # Orchestrates static security rules and CWE classification
 │   ├── synthesizer/
 │   │   ├── test_generator.ts     # Generates complete test suites for modified functions
 │   │   ├── suggestion_fixer.ts   # Formats replacement code into 1-click suggestion blocks
+│   │   ├── validator.ts          # Validates syntax of generated tests with auto-repair
+│   │   ├── pr_description.ts     # Synthesizes Conventional PR descriptions and changelogs
 │   │   └── prompt_templates.ts   # Prompts for logic review, security, and test synthesis
 │   ├── engine/
 │   │   ├── llm_provider.ts       # Provider client for Ollama, OpenAI, Anthropic, Gemini
@@ -91,6 +96,11 @@ reviewforge/
 │   │   │   ├── Header.tsx            # Navigation header and connection status
 │   │   │   ├── PrReviewCard.tsx      # Finding cards with inline suggestion diff view
 │   │   │   ├── DiffPlayground.tsx    # Live diff input and on-demand review inspector
+│   │   │   ├── DiffViewer.tsx        # Interactive diff viewer with inline patch fixes & filters
+│   │   │   ├── PrDescriptionTab.tsx  # Conventional PR title, markdown description, and changelog
+│   │   │   ├── TaintTracerTab.tsx    # Taint flow trajectory and blast radius visualizer
+│   │   │   ├── AuditLogTab.tsx       # Historical PR reviews and webhook execution log
+│   │   │   ├── CustomRulesModal.tsx  # In-browser regex rule sandbox and policy editor
 │   │   │   ├── SynthesizedTests.tsx  # Generated test suite drawer with copy and export
 │   │   │   ├── SecurityScorecard.tsx # OWASP risk scorecard and CWE vulnerability table
 │   │   │   └── ModelSettingsModal.tsx# Provider configuration (Ollama, API keys, models)
@@ -169,3 +179,11 @@ reviewforge/
 - Write Vitest unit test suite covering diff parsing, AST expansion, security rules, test synthesis, and reviewer engine.
 - Verify end-to-end functionality across CLI, API, and web interface.
 - Complete documentation files and clean README with humanizer discipline.
+
+### Phase 8: Advanced Extensions and Studio Enhancements (Completed)
+- Auto-generated Conventional PR Descriptions and CHANGELOG.md snippets from AST diff analysis.
+- AST Taint and Blast Radius Propagation Tracer for dangerous execution sinks.
+- In-browser interactive custom regex rule sandbox with YAML persistence.
+- One-click inline fix application, line replacement, and patched file download directly in the web UI.
+- PR Audit Log and webhook review history dashboard with re-review execution.
+- Reviewer progress tracking with file search, review completion checks, and vulnerability status filtering.

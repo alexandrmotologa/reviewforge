@@ -9,6 +9,8 @@ import { ReviewForgeConfig, isFileExcluded } from '../config/policy';
 import { loadReviewForgeConfig } from '../config/loader';
 import { detectBreakingChanges, BreakingChangeFinding } from '../ast/breaking_changes';
 import { generateGitPatch } from '../export/patch';
+import { synthesizePrDescription, PrDescriptionResult } from '../synthesizer/pr_description';
+import { traceTaintFlow, TaintTraceFinding } from '../ast/taint_tracer';
 
 export interface ReviewOptions {
   generateTests?: boolean;
@@ -28,6 +30,8 @@ export interface ReviewResult {
   expandedContexts: ExpandedFileContext[];
   synthesizedTests: SynthesizedTestFile[];
   breakingChanges: BreakingChangeFinding[];
+  taintTraces: TaintTraceFinding[];
+  prDescription: PrDescriptionResult;
   patchContent: string;
   generalComments: string[];
   markdownReport: string;
@@ -194,13 +198,28 @@ export class ReviewForgeEngine {
       }
     }
 
-    // 6. Generate 1-click git patch
+    // 6. Trace taint flow and blast radius
+    const taintTraces = traceTaintFlow(expandedContexts);
+
+    // 7. Generate 1-click git patch
     const patchResult = generateGitPatch(scorecard.findings, fileContentsMap);
+
+    // 8. Synthesize conventional PR Description and Changelog
+    const prDescription = synthesizePrDescription({
+      fileDiffs,
+      expandedContexts,
+      scorecard,
+      breakingChanges,
+      synthesizedTests
+    });
 
     // Build executive summary
     let summary = `Analyzed ${fileDiffs.length} files with ${scorecard.totalFindings} security findings`;
     if (breakingChanges.length > 0) {
       summary += ` and ${breakingChanges.length} breaking API contract change(s)`;
+    }
+    if (taintTraces.length > 0) {
+      summary += ` (${taintTraces.length} tainted call chains detected)`;
     }
     summary += `. Risk Score: ${scorecard.riskScore}/100.`;
 
@@ -222,6 +241,8 @@ export class ReviewForgeEngine {
       expandedContexts,
       synthesizedTests,
       breakingChanges,
+      taintTraces,
+      prDescription,
       patchContent: patchResult.patchContent,
       generalComments,
       markdownReport

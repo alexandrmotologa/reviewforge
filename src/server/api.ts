@@ -8,11 +8,24 @@ import { LLMProvider, ProviderType } from '../engine/llm_provider';
 import { GitHubReviewer } from '../git/octokit_client';
 import { generateSarifReport } from '../export/sarif';
 import { handleGitHubWebhook } from './webhook';
+import { testCustomRule, saveCustomRuleToConfig, CustomRuleDefinition } from '../security/custom_rule_engine';
 
 export interface ServerOptions {
   port?: number;
   host?: string;
   engine?: ReviewForgeEngine;
+}
+
+export interface WebhookEventRecord {
+  id: string;
+  timestamp: string;
+  event: string;
+  repo: string;
+  pullNumber?: number;
+  author?: string;
+  reviewId?: string;
+  riskScore?: number;
+  status: 'PASSED' | 'ACTION REQUIRED' | 'ERROR';
 }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
@@ -25,6 +38,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const engine = options.engine || defaultEngine;
   let llmProvider = new LLMProvider();
   const reviewsStore = new Map<string, ReviewResult>();
+  const auditLogStore: WebhookEventRecord[] = [];
 
   // Register CORS
   app.register(cors, {
@@ -79,11 +93,22 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       });
 
       reviewsStore.set(result.id, result);
-      // Keep store under 100 items
       if (reviewsStore.size > 100) {
         const firstKey = reviewsStore.keys().next().value;
         if (firstKey) reviewsStore.delete(firstKey);
       }
+
+      // Add to audit log
+      auditLogStore.unshift({
+        id: `audit-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        event: 'manual_diff_review',
+        repo: 'local-diff',
+        reviewId: result.id,
+        riskScore: result.scorecard.riskScore,
+        status: result.scorecard.passed ? 'PASSED' : 'ACTION REQUIRED'
+      });
+      if (auditLogStore.length > 200) auditLogStore.pop();
 
       return reply.send(result);
     } catch (err: any) {
@@ -146,6 +171,19 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         });
       }
 
+      auditLogStore.unshift({
+        id: `audit-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        event: 'pr_review',
+        repo: `${owner}/${repo}`,
+        pullNumber,
+        author: prDetails.user?.login,
+        reviewId: result.id,
+        riskScore: result.scorecard.riskScore,
+        status: result.scorecard.passed ? 'PASSED' : 'ACTION REQUIRED'
+      });
+      if (auditLogStore.length > 200) auditLogStore.pop();
+
       return reply.send({
         ...result,
         prInfo: {
@@ -193,6 +231,71 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     } catch (err: any) {
       return reply.code(500).send({ error: err.message || 'Publishing review failed' });
     }
+  });
+
+  // Audit Log & Webhook history endpoints
+  app.get('/api/audit-log', async () => {
+    return { records: auditLogStore };
+  });
+
+  app.post('/api/audit-log/:id/re-review', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const record = auditLogStore.find(r => r.id === id);
+    if (!record || !record.repo || !record.pullNumber) {
+      return reply.code(404).send({ error: 'Historical PR record not found or missing target' });
+    }
+
+    const [owner, repo] = record.repo.split('/');
+    const pullNumber = record.pullNumber;
+
+    try {
+      const reviewer = new GitHubReviewer();
+      const diff = await reviewer.getPullRequestDiff(owner, repo, pullNumber);
+      const prDetails = await reviewer.getPullRequestDetails(owner, repo, pullNumber);
+      const result = await engine.reviewDiff(diff, { llmProvider });
+
+      reviewsStore.set(result.id, result);
+      record.reviewId = result.id;
+      record.riskScore = result.scorecard.riskScore;
+      record.status = result.scorecard.passed ? 'PASSED' : 'ACTION REQUIRED';
+      record.timestamp = new Date().toISOString();
+
+      return reply.send({
+        ...result,
+        prInfo: {
+          title: prDetails.title,
+          author: prDetails.user?.login,
+          state: prDetails.state,
+          headBranch: prDetails.head?.ref,
+          baseBranch: prDetails.base?.ref,
+          htmlUrl: prDetails.html_url,
+          owner,
+          repo,
+          pullNumber
+        }
+      });
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message || 'Re-review failed' });
+    }
+  });
+
+  // Custom Rules Sandbox API
+  app.post('/api/rules/test', async (req, reply) => {
+    const body = req.body as { pattern: string; code: string; severity?: any };
+    if (!body || !body.pattern || !body.code) {
+      return reply.code(400).send({ error: 'pattern and code are required' });
+    }
+    const result = testCustomRule(body.pattern, body.code, body.severity || 'high');
+    return reply.send(result);
+  });
+
+  app.post('/api/rules/save', async (req, reply) => {
+    const body = req.body as CustomRuleDefinition;
+    if (!body || !body.id || !body.pattern) {
+      return reply.code(400).send({ error: 'id and pattern are required' });
+    }
+    const saved = saveCustomRuleToConfig(body);
+    return reply.send({ success: saved });
   });
 
   // List recent reviews

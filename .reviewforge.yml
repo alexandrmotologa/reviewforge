@@ -1,12 +1,6 @@
 version: 1
-
-# Minimum security score (0-100) required to pass CI
 min_score: 75
-
-# Block PR merge if any critical vulnerability is detected
 block_on_critical: true
-
-# Glob patterns to exclude from review and AST audit
 exclude:
   - "**/node_modules/**"
   - "**/dist/**"
@@ -14,8 +8,6 @@ exclude:
   - "**/*.min.js"
   - "**/*.bundle.js"
   - "**/coverage/**"
-
-# Security rule severity actions: error | warn | ignore
 rules:
   sql-injection: error
   path-traversal: error
@@ -24,6 +16,8 @@ rules:
   ssrf: error
   insecure-regex: warn
   cors-csrf: warn
-
-# Preferred unit test synthesis framework: vitest | jest | pytest | go
 framework: vitest
+custom_secrets:
+  - name: no_test_eval
+    pattern: \beval\s*\(
+    severity: high
